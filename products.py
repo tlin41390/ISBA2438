@@ -45,12 +45,30 @@ def check_schema(data):
         seen_ids.add(pid)
 
 
+def normalize_store(data):
+    if isinstance(data, list):
+        check_schema(data)
+        next_id = max((p["id"] for p in data), default=0) + 1
+        return {"next_id": next_id, "products": data}
+    if (
+        isinstance(data, dict)
+        and "next_id" in data
+        and "products" in data
+        and not isinstance(data["next_id"], bool)
+        and isinstance(data["next_id"], int)
+        and data["next_id"] >= 1
+    ):
+        check_schema(data["products"])
+        return {"next_id": data["next_id"], "products": data["products"]}
+    fail("data file does not match the required schema")
+
+
 def load_store(path):
     try:
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
     except FileNotFoundError:
-        return []
+        return {"next_id": 1, "products": []}
     except (OSError, ValueError) as exc:
         fail(f"cannot read data file: {exc}")
     if not content.strip():
@@ -59,12 +77,13 @@ def load_store(path):
         data = json.loads(content)
     except json.JSONDecodeError:
         fail("data file contains malformed JSON")
-    check_schema(data)
-    return data
+    return normalize_store(data)
 
 
-def save_store(path, products):
-    payload = json.dumps(products, indent=2) + "\n"
+def save_store(path, store):
+    payload = json.dumps(
+        {"next_id": store["next_id"], "products": store["products"]}, indent=2
+    ) + "\n"
     directory = os.path.dirname(os.path.abspath(path))
     tmp_name = None
     try:
@@ -122,28 +141,30 @@ def cmd_add(args):
     price = validate_price(args.price)
     quantity = validate_quantity(args.quantity)
 
-    products = load_store(args.file)
-    next_id = max((p["id"] for p in products), default=0) + 1
+    store = load_store(args.file)
+    products = store["products"]
+    next_id = max([store["next_id"]] + [p["id"] + 1 for p in products])
     product = {"id": next_id, "name": name, "price": price, "quantity": quantity}
     products.append(product)
-    save_store(args.file, products)
+    store["next_id"] = next_id + 1
+    save_store(args.file, store)
     print(json.dumps(product, indent=2))
 
 
 def cmd_list(args):
-    products = sorted(load_store(args.file), key=lambda p: p["id"])
+    products = sorted(load_store(args.file)["products"], key=lambda p: p["id"])
     print(json.dumps(products, indent=2))
 
 
 def cmd_low(args):
     threshold = validate_quantity(args.threshold)
-    products = sorted(load_store(args.file), key=lambda p: p["id"])
+    products = sorted(load_store(args.file)["products"], key=lambda p: p["id"])
     low_stock = [p for p in products if p["quantity"] <= threshold]
     print(json.dumps(low_stock, indent=2))
 
 
 def cmd_get(args):
-    product = find_product(load_store(args.file), args.id)
+    product = find_product(load_store(args.file)["products"], args.id)
     if product is None:
         fail(f"Product with ID {args.id} does not exist")
     print(json.dumps(product, indent=2))
@@ -157,8 +178,8 @@ def cmd_update(args):
     price = validate_price(args.price) if args.price is not None else None
     quantity = validate_quantity(args.quantity) if args.quantity is not None else None
 
-    products = load_store(args.file)
-    product = find_product(products, args.id)
+    store = load_store(args.file)
+    product = find_product(store["products"], args.id)
     if product is None:
         fail(f"Product with ID {args.id} does not exist")
 
@@ -169,7 +190,7 @@ def cmd_update(args):
     if quantity is not None:
         product["quantity"] = quantity
 
-    save_store(args.file, products)
+    save_store(args.file, store)
     print(json.dumps(product, indent=2))
 
 
@@ -177,13 +198,13 @@ def cmd_delete(args):
     if not args.yes:
         fail("--yes is required to confirm deletion", 2)
 
-    products = load_store(args.file)
-    product = find_product(products, args.id)
+    store = load_store(args.file)
+    product = find_product(store["products"], args.id)
     if product is None:
         fail(f"Product with ID {args.id} does not exist")
 
-    products.remove(product)
-    save_store(args.file, products)
+    store["products"].remove(product)
+    save_store(args.file, store)
     print(json.dumps({"deleted_id": args.id}))
 
 

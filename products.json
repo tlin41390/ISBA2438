@@ -1,14 +1,11 @@
-[
-  {
-    "id": 1,
-    "name": "fruit",
-    "price": 3.0,
-    "quantity": 12
-  },
-  {
-    "id": 3,
-    "name": "Pencil",
-    "price": 1.25,
-    "quantity": 5
-  }
-]
+{
+  "next_id": 3,
+  "products": [
+    {
+      "id": 1,
+      "name": "Notebook",
+      "price": 4.5,
+      "quantity": 12
+    }
+  ]
+}
